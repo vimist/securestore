@@ -1,0 +1,222 @@
+#! /bin/bash
+
+STORE_DIR="${STORE_DIR:-"$HOME/pass"}"
+TEMPLATE_FILE="$STORE_DIR/.template"
+
+NEW_PASS_CHARS="${NEW_PASS_CHARS:-"a-zA-Z0-9_=[]{}()<>#@?"}"
+NEW_PASS_LEN="${NEW_PASS_LEN:-20}"
+
+TYPE_INTERVAL="${TYPE_INTERVAL:-20}"
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "$BIN_DIR/vcstore"
+
+
+#
+# Helper functions that can be used inside each credential file
+#
+
+type() {
+	ss_check_command xdotool --version
+	xdotool type --delay "$TYPE_INTERVAL" --clearmodifiers "$@"
+}
+
+key() {
+	ss_check_command xdotool --version
+	xdotool key --delay "$TYPE_INTERVAL" --clearmodifiers "$@"
+}
+
+#
+# Plumbing functions
+#
+
+pass_generate_password() {
+	cat /dev/urandom | \
+		tr --delete --complement "$NEW_PASS_CHARS" | \
+		head --bytes "$NEW_PASS_LEN"
+}
+
+#
+# Main functions
+#
+
+#: $PROG init <gpg_key_id>
+#: Initialise the store as well as a new git repository in '$STORE_DIR'
+#: (defined by the STORE_DIR environment variable)
+
+#: $PROG list|ls
+#: List the contents of the store (requires tree)
+
+#: $PROG list-properties <entry_name>
+#: List all properties associated with <entry_name> in the store
+pass_list_properties() {
+	ss_get "$@" > "$TMP_FILE"  # Get the file from the store
+	
+	while read LINE; do
+		if [[ "$LINE" =~ ^[a-zA-Z_][a-zA-Z0-9_]{0,100}=. ]]; then
+			PROPERTY="${LINE%%=*}"
+			echo "$PROPERTY"
+		fi
+	done < "$TMP_FILE"
+}
+
+#: $PROG list-functions <entry_name>
+#: List all functions associated with <entry_name> in the store
+pass_list_functions() {
+	ss_get "$@" > "$TMP_FILE"  # Get the file from the store
+	
+	while read LINE; do
+		if [[ "$LINE" =~ ^[a-zA-Z_][a-zA-Z0-9_]{0,100}\(\) ]]; then
+			FUNCTION="${LINE%%'()'*}"
+			echo "$FUNCTION"
+		fi
+	done < "$TMP_FILE"
+}
+
+#: $PROG add <entry_name> <flie_to_add>
+#: Add <flie_to_add> to the store under <entry_name> and commit it to the
+#: repository. If the file '$TEMPLATE_FILE' exists, it will be used as a
+#: template for the new entry. If the template file exists and contains the
+#: string '{PASSWORD}', it will be replaced with a randomly generated password
+#: defined by the environment variables 'NEW_PASS_CHARS' and 'NEW_PASS_LEN'
+pass_add() {
+	OUT_FILE="$STORE_DIR/$1"
+
+	if [ -f "$TEMPLATE_FILE" ]; then
+		sed "s/{PASSWORD}/$(pass_generate_password)/" "$TEMPLATE_FILE" > "$TMP_FILE"
+	fi
+
+	[ -z "$OUT_FILE" ] || [ -e "$OUT_FILE" ] && \
+		ss_error "You must provide a unique name for this entry"
+
+	$EDITOR "$TMP_FILE"
+
+	vcs_add "$1" "$TMP_FILE"
+}
+
+#: $PROG get <entry_name>
+#: Get an entry from the store and write it to stdout
+
+#: $PROG get-property <entry_name> <property_name>
+#: Print the value of the <property_name> stored in <entry_name> to stdout
+pass_get_property() {
+	ss_get "$1" > "$TMP_FILE"  # Get the file from the store
+	source "$TMP_FILE"  # Load the file
+
+	[ -z "$2" ] && ss_error "You must specify a property to retrieve"
+
+	echo "${!2}"
+}
+
+#: $PROG edit <entry_name>
+#: Edit <entry_name> in the store using $EDITOR or vi if EDITOR isn't set and
+#: commit the change to the repository
+
+#: $PROG move <source_entry_name> <destination_entry_name>
+#: Move <source_entry_name> to <destination_entry_name> and commit the change to
+#: the repository
+
+#: $PROG remove|rm <entry_name>
+#: Remove <entry_name> from the store and commit the change to the repository
+
+#: $PROG type-property <entry_name> <property_name>
+#: Type the value of <property_name> stored in <entry_name> as if you had typed
+#: it on the keyboard (requires xdotool)
+pass_type_property() {
+	type "$(get_property "$@")"
+}
+
+#: $PROG copy-property <entry_name> <property_name>
+#: Copy the value of <property_name> stored in <entry_name> to the clipboard.
+#: The value can be pasted 1 time before the it's cleared from the clipboard
+#: (requires xclip)
+pass_copy_property() {
+	ss_check_command xclip -version
+	pass_get_property "$@" | xclip -selection clipboard -loops 1
+}
+
+#: $PROG open-property <entry_name> <property_name>
+#: Open the value of <property_name> stored in <entry_name> with the default
+#: application (requires xdg-open)
+pass_open_property() {
+	PROPERTY="$(get_property "$@")"
+
+	if [ -n "$PROPERTY" ]; then
+		ss_check_command xdg-open --version
+		xdg-open "$PROPERTY"
+	fi
+}
+
+#: $PROG run-function <entry_name> <function_name>
+#: Run <function_name> defined in <entry_name>
+pass_run_function() {
+	ss_get "$1" > "$TMP_FILE"  # Get the file from the store
+	source "$TMP_FILE"  # Load the file
+
+	[ -z "$2" ] && ss_error "You must specify a function to run"
+
+	"$2"
+}
+
+#: $PROG help
+#: Display this help message
+pass_help() {
+	read -d '' HELP <<-EOF
+	Password SecureStore Help
+
+	Create and manage an encrypted file store using an existing GPG key pair
+	and using git to track changes.
+
+	All entries MUST be valid shell scripts. For example:
+
+	  Username=FortyTwo
+	  Password=C84umg0WGgYm4WjrASi2
+
+	  AutoType() {
+	      type "\$Username"
+	      key Tab
+	      type "\$Password"
+	      key Return
+	  }
+
+	We didn't quote either of the values above, but if you're using special
+	characters in any of your values you will need to. You can also include
+	functions in your entries (like AutoType), which can be ran using the
+	'run-function' command.
+	EOF
+
+	ss_make_help "${BASH_SOURCE[0]}" "$0" "$HELP"
+}
+
+#
+# Aliases
+#
+
+list_properties() { pass_list_properties "$@"; }
+
+list_functions() { pass_list_functions "$@"; }
+
+add() { pass_add "$@"; }
+
+get_property() { pass_get_property "$@"; }
+
+type_property() { pass_type_property "$@"; }
+
+copy_property() { pass_copy_property "$@"; }
+
+open_property() { pass_open_property "$@"; }
+
+run_function() { pass_run_function "$@"; }
+
+help() { pass_help "$@"; }
+
+#
+# Initialise
+#
+
+if [ "${BASH_SOURCE[0]}" == "$0" ]; then
+	setxkbmap # https://github.com/jordansissel/xdotool/issues/49 setxkbmap
+
+	ss_run "${@:-list}"
+fi

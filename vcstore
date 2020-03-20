@@ -1,0 +1,132 @@
+#! /bin/bash
+
+BIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "$BIN_DIR/securestore"
+
+
+#
+# Plumbing functions
+#
+
+vcs_git_init() {
+	ss_check_command git --version
+	git init &> /dev/null || ss_error "Could not initialise the git repository"
+}
+
+vcs_git_rm() {
+	ss_check_command git --version
+	git rm "$1" &> /dev/null || \
+		ss_error "Could not remove '$1' from the git repository"
+}
+
+vcs_git_add() {
+	ss_check_command git --version
+	git add "$1" &> /dev/null || \
+		ss_error "Could not add '$1' to the git repository"
+}
+
+vcs_git_commit() {
+	ss_check_command git --version
+	git commit --message "$1" &> /dev/null || \
+		ss_error "Could not commit to the git repository"
+}
+
+#
+# Main functions
+#
+
+#: $PROG init <gpg_key_id>
+#: Initialise the store and a new git repository in the current directory
+vcs_init() {
+	ss_init "$@"
+
+	vcs_git_init
+
+	vcs_git_add ".gpg_id"
+	vcs_git_commit "Added .gpg_id file"
+}
+
+#: $PROG list|ls
+#: List the contents of the store (requires tree)
+
+#: $PROG add <entry_name> <flie_to_add>
+#: Add <flie_to_add> to the store under <entry_name> and commit it to the
+#: repository
+vcs_add() {
+	ss_add "$@"
+
+	vcs_git_add "$1"
+	vcs_git_commit "Added '$1'"
+}
+
+#: $PROG get <entry_name>
+#: Get an entry from the store and write it to stdout
+
+#: $PROG edit <entry_name>
+#: Edit <entry_name> in the store using '${EDITOR:-vim}' (defined by the EDITOR
+#: environment variable) and commit the change to the repository
+vcs_edit() {
+	ss_edit "$@"
+
+	vcs_git_add "$1"
+	vcs_git_commit "Updated '$1'"
+}
+
+#: $PROG move <source_entry_name> <destination_entry_name>
+#: Move <source_entry_name> to <destination_entry_name> and commit the change to
+#: the repository
+vcs_move() {
+	ss_move "$@"
+
+	vcs_git_rm "$1"
+	vcs_git_add "$2"
+	vcs_git_commit "Renamed '$1' to '$2'"
+}
+
+#: $PROG remove|rm <entry_name>
+#: Remove <entry_name> from the store and commit the change to the repository
+vcs_remove() {
+	ss_remove "$@"
+
+	vcs_git_rm "$1"
+	vcs_git_commit "Removed '$1'"
+}
+
+#: $PROG help
+#: Display this help message
+vcs_help() {
+	read -d '' HELP <<-EOF
+	Version Controlled Secure Store Help
+
+	Create and manage an encrypted file store using an existing GPG key pair
+	and using git to track changes.
+	EOF
+
+	ss_make_help "${BASH_SOURCE[0]}" "$0" "$HELP"
+}
+
+#
+# Aliases
+#
+
+init() { vcs_init "$@"; }
+
+add() { vcs_add "$@"; }
+
+edit() { vcs_edit "$@"; }
+
+move() { vcs_move "$@"; }
+
+remove() { vcs_remove "$@"; }
+rm() { vcs_remove "$@"; }
+
+help() { vcs_help "$@"; }
+
+#
+# Initialise
+#
+
+type git &> /dev/null || ss_error "'git' command is not available"
+
+[ "${BASH_SOURCE[0]}" == "$0" ] && ss_run "${@:-list}"

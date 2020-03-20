@@ -1,0 +1,227 @@
+#! /bin/bash
+
+STORE_DIR="${STORE_DIR:-$PWD}"
+
+GPG_ID_FILE="$STORE_DIR/.gpg_id"
+SEC_DIR="/dev/shm"
+TMP_FILE="$(mktemp -p "$SEC_DIR" 2> /dev/null)"
+
+EDITOR=${EDITOR:-vi}
+
+
+#
+# Internal helper functions
+#
+
+ss_cleanup() {
+	command rm -Rf "$TMP_FILE"
+}
+trap ss_cleanup EXIT
+
+ss_store_initialised() {
+	if [ -d "$STORE_DIR" ] && [ -f "$GPG_ID_FILE" ]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+ss_run() {
+	COMMAND="${1//-/_}"
+
+	shift &> /dev/null
+
+	"$COMMAND" "$@"
+}
+
+ss_error() {
+	echo "$@" >&2
+	exit 1
+}
+
+ss_check_command() {
+	"$@" &> /dev/null || ss_error "Could not find '$1'"
+}
+
+# Extract the help comments from a file and format them nicely
+# $1 = The file to extract the help comments from
+# $2 = The name of the program (i.e. "$0")
+# $3 = The generic help text at the top of the output
+ss_make_help() {
+	PROG="$(basename "$2")"
+
+	WIDTH=80
+
+	echo "$3"
+	echo
+	echo "Availabe commands:"
+
+	FIRST_LINE=true
+	while read LINE; do
+		if [[ "${LINE:0:2}" = '#:' ]]; then
+			LINE="${LINE:2}"
+			LINE="${LINE# }"
+			LINE="$(eval 'echo "'"$LINE"'"')"
+
+			if [ "$FIRST_LINE" == true ]; then
+				echo
+				echo "  $LINE"
+				FIRST_LINE=false
+			else
+				echo "      $LINE"
+			fi
+		else
+			FIRST_LINE=true
+		fi
+	done < "$1"
+}
+
+#
+# Plumbing functions
+#
+
+ss_get_gpg_id() {
+	ss_store_initialised || ss_error "Store not initialised"
+	cat "$GPG_ID_FILE"
+}
+
+ss_encrypt_file() {
+	ss_check_command gpg --version
+	gpg --yes --sign --encrypt --recipient "$(ss_get_gpg_id)" --output - "$1" \
+		|| ss_error "Could not encrypt the file"
+}
+
+ss_decrypt_file() {
+	ss_check_command gpg --version
+	gpg --quiet --decrypt --output - "$1" 2> /dev/null || ss_error \
+		"Could not decrypt the file / verify the signature"
+}
+
+#
+# Main functions
+#
+
+#: $PROG init <gpg_key_id>
+#: Initialise the store in the current directory
+ss_init() {
+	ss_store_initialised && ss_error "Store already initialised"
+	[ -z "$1" ] && ss_error "You must provide a GPG Key ID"
+
+	mkdir --parents "$STORE_DIR"
+	cd "$STORE_DIR"
+	echo "$1" > "$GPG_ID_FILE"
+}
+
+#: $PROG list|ls
+#: List the contents of the store (requires tree)
+ss_list() {
+	ss_store_initialised || ss_error "Store not initialised"
+	ss_check_command tree --version
+
+	tree --noreport -C
+}
+
+#: $PROG add <entry_name> <flie_to_add>
+#: Add <flie_to_add> to the store under <entry_name>
+ss_add() {
+	OUT_FILE="$STORE_DIR/$1"
+
+	ss_store_initialised || ss_error "Store not initialised"
+	[ -f "$2" ] || ss_error "You must specify a valid file to add to the store"
+	[ -z "$OUT_FILE" ] || [ -e "$OUT_FILE" ] && \
+		ss_error "You must provide a unique name for this entry"
+
+	mkdir --parents "$(dirname "$OUT_FILE")"
+
+	ss_encrypt_file "$2" > "$OUT_FILE"
+}
+
+#: $PROG get <entry_name>
+#: Get an entry from the store and write it to stdout
+ss_get() {
+	ss_store_initialised || ss_error "Store not initialised"
+
+	[ -f "$1" ] || ss_error "You must specify a valid entry to retrieve"
+
+	ss_decrypt_file "$1"
+}
+
+#: $PROG edit <entry_name>
+#: Edit <entry_name> in the store using '${EDITOR:-vim}' (defined by the EDITOR
+#: environment variable)
+ss_edit() {
+	ss_get "$1" > "$TMP_FILE"
+	$EDITOR "$TMP_FILE"
+	ss_encrypt_file "$TMP_FILE" > "$1"
+}
+
+#: $PROG move <source_entry_name> <destination_entry_name>
+#: Move the entry from <source_entry_name> to <destination_entry_name>
+ss_move() {
+	ss_store_initialised || ss_error "Store not initialised"
+	[ -f "$1" ] || ss_error "Source entry does not exist"
+	[ -f "$2" ] && ss_error "Destination entry already exists"
+
+	mkdir -p "$(dirname "$2")"
+	cp "$1" "$2" || ss_error "Could not move entry"
+	ss_remove "$1"
+}
+
+#: $PROG remove|rm <entry_name>
+#: Remove <entry_name> from the store
+ss_remove() {
+	ss_store_initialised || ss_error "Store not initialised"
+	[ -f "$1" ] || ss_error "You must specify a valid entry to remove"
+
+	command rm "$1"
+
+	ENTRY_DIR="$(dirname "$1")"
+	while rmdir "$ENTRY_DIR" &> /dev/null; do
+		ENTRY_DIR="$(dirname "$ENTRY_DIR")"
+	done
+}
+
+#: $PROG help
+#: Display this help message
+ss_help() {
+	read -d '' HELP <<-EOF
+	Secure Store Help
+
+	Create and manage an encrypted file store using an existing GPG key pair.
+	EOF
+
+	ss_make_help "${BASH_SOURCE[0]}" "$0" "$HELP"
+}
+
+#
+# Aliases
+#
+
+init() { ss_init "$@"; }
+
+list() { ss_list "$@"; }
+ls() { ss_list "$@"; }
+
+add() { ss_add "$@"; }
+
+get() { ss_get "$@"; }
+
+edit() { ss_edit "$@"; }
+
+move() { ss_move "$@"; }
+
+remove() { ss_remove "$@"; }
+rm() { ss_remove "$@"; }
+
+help() { ss_help "$@"; }
+
+#
+# Initialise
+#
+
+[ -d "$SEC_DIR" ] \
+	|| ss_error "'$SEC_DIR' is required for storing temporary files"
+
+ss_store_initialised && cd "$STORE_DIR"
+
+[ "${BASH_SOURCE[0]}" == "$0" ] && ss_run "${@:-list}"
