@@ -67,10 +67,10 @@ vcs_add() {
 #: Edit <entry_name> in the store using '${EDITOR:-vim}' (defined by the EDITOR
 #: environment variable) and commit the change to the repository
 vcs_edit() {
-	ss_edit "$@"
-
-	vcs_git_add "$1"
-	vcs_git_commit "Updated '$1'"
+	if ss_edit "$@"; then
+		vcs_git_add "$1"
+		vcs_git_commit "Updated '$1'"
+	fi
 }
 
 #: $PROG move <source_entry_name> <destination_entry_name>

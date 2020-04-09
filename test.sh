@@ -88,8 +88,8 @@ test_securestore() {
 	[[ "$($SECURESTORE edit MovedEntry 2>&1)" =~ Hello\ World ]]
 	result_of "Edit entry"
 
-	! [[ "$(md5sum MovedEntry 2>&1)" == "$OLD_HASH" ]]
-	result_of "Verify entry was re-encrypted (i.e. changed)"
+	[[ "$(md5sum MovedEntry 2>&1)" == "$OLD_HASH" ]]
+	result_of "Verify entry was not re-encrypted (i.e. changed)"
 
 	[[ "$($SECURESTORE file MovedEntry 2>&1)" =~ encrypted ]]
 	result_of "Verify entry is encrypted"
@@ -132,8 +132,8 @@ test_vcstore() {
 	[[ "$($VCSTORE edit MovedEntry 2>&1)" =~ Hello\ World ]]
 	result_of "Edit entry"
 
-	[[ "$(git log --oneline 2>&1)" =~ Updated\ \'MovedEntry\' ]]
-	result_of "Verify commit was made"
+	! [[ "$(git log --oneline 2>&1)" =~ Updated\ \'MovedEntry\' ]]
+	result_of "Verify no commit was made"
 
 	[[ "$($VCSTORE file MovedEntry 2>&1)" =~ encrypted ]]
 	result_of "Verify entry is encrypted"
