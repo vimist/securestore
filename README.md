@@ -76,7 +76,7 @@ store and adding some files, once you've done that, run `vcstore git log` to see
 the repository log.
 
 You can run any Git commands (or any command in general) you like on your store,
-just run `vcstore <command>`. For instance, add a Git remote run `vcstore git
+just run `vcstore <command>`. For instance, to add a Git remote run `vcstore git
 remote add origin <location>`.
 
 ### Password Manager
