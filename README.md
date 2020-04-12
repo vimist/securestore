@@ -92,7 +92,7 @@ is what an entry could look like:
 
 ```bash
 Username=""
-Password="{PASSWORD}"
+Password=""
 
 URL=""
 
@@ -127,15 +127,12 @@ a list of all subcommands). Briefly though, we can run:
 
 These simple commands open up a world of opportunity for automation and
 extension. A great example is getting `pass` to auto-type your credentials into
-a website using a really simple script.
+a website. Take a look in the [integrations][integrations] directory for some
+example scripts.
 
-- Ensure your entry has an `AutoType` function (you can call it whatever you
-  like, but that's the name we'll use here).
-- Get the current window title in a script using something like `xdotool
-  getwindowname $(xdotool getactivewindow)`
-- Use an `if`/`else` or `switch`/`case` statement to match the current window
-  title to an entry in your store.
-- Run `pass run-function <entry_name> AutoType`.
+One final feature of this layer is that it'll automatically use
+`$HOME/pass/.template` as your default for new entries. It'll also substitute
+the first occurrence of `{PASSWORD}` with a randomly generated password.
 
 
 [bash]: https://www.gnu.org/software/bash/
@@ -145,3 +142,4 @@ a website using a really simple script.
 [pass]: https://www.passwordstore.org
 [vcs]: vcstore
 [sspass]: pass
+[integrations]: integrations
