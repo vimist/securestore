@@ -20,11 +20,13 @@ source "$BIN_DIR/vcstore"
 type() {
 	ss_check_command xdotool --version
 	xdotool type --delay "$TYPE_INTERVAL" "$@"
+	sleep "${TYPE_INTERVAL}e-3"
 }
 
 key() {
 	ss_check_command xdotool --version
 	xdotool key --delay "$TYPE_INTERVAL" "$@"
+	sleep "${TYPE_INTERVAL}e-3"
 }
 
 #
