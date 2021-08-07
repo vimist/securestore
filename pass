@@ -33,6 +33,9 @@ key() {
 # Plumbing functions
 #
 
+#: $PROG generate-password
+#: Generate a random password made up of $NEW_PASS_LEN characters
+#: (defined in the NEW_PASS_LEN and NEW_PASS_CHARS environment variables)
 pass_generate_password() {
 	cat /dev/urandom | \
 		tr --delete --complement "$NEW_PASS_CHARS" | \
@@ -194,6 +197,8 @@ pass_help() {
 #
 # Aliases
 #
+
+generate_password() { pass_generate_password "$@"; }
 
 list_properties() { pass_list_properties "$@"; }
 
