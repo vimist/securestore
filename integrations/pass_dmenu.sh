@@ -1,38 +1,42 @@
 #! /bin/bash
 
+set -e
 
-if [ -n "$1" ]; then
-	ENTRY="$1"
-else
-	# Prompt to select an entry if it wasn't given as an argument
-	ENTRY="$(
-		pass find . -type f | \
-			grep -Pv '/\.' | \
-			sed -e 's/^.\///' -e 's/\// \/ /g' | \
-			sort | \
-			dmenu -i -p 'Pass:'
-	)"
 
-	[ $? -eq 0 ] || exit 1
+REGEX="$1"
 
-	ENTRY="${ENTRY// \/ /\/}"
-fi
+readarray -t FILTERED_ENTRIES < <(
+	pass find . -not -path '*/\.*' -type f | \
+		grep -Pi "$REGEX" | \
+		sed -e 's/^.\///' -e 's/\// \/ /g' | \
+		sort
+)
 
-PRETTY_ENTRY="${ENTRY//\// \/ }"
+(( ${#FILTERED_ENTRIES[@]} == 0 )) && exec "$0"
 
-# Prompt to select an action from an entry
+
+SELECTED_ENTRY="$((
+	printf '%s\n' "${FILTERED_ENTRIES[@]}"
+	echo 'More...'
+) | dmenu -i -p 'Pass:')"
+
+[[ "$ENTRY" == "More..." ]] && exec "$0"
+
+
+PRETTY_ENTRY="$SELECTED_ENTRY"
+SELECTED_ENTRY="${SELECTED_ENTRY// \/ /\/}"
+
 ACTION_PROPERTY="$((
-	echo "View $PRETTY_ENTRY"
-	echo "Edit $PRETTY_ENTRY"
-
 	while read FUNCTION; do
 		echo "Run $FUNCTION"
-	done < <(pass list-functions "$ENTRY")
+	done < <(pass list-functions "$SELECTED_ENTRY")
 
 	while read PROPERTY; do
 		echo "Type $PROPERTY"
-	done < <(pass list-properties "$ENTRY")
+	done < <(pass list-properties "$SELECTED_ENTRY")
 
+	echo "View $PRETTY_ENTRY"
+	echo "Edit $PRETTY_ENTRY"
 ) | dmenu -i -p "$PRETTY_ENTRY")"
 
 
@@ -40,13 +44,12 @@ ACTION="${ACTION_PROPERTY%% *}"
 ACTION="${ACTION,,}"
 PROPERTY="${ACTION_PROPERTY#* }"
 
-# Perform the specified action
 if [ "$ACTION" == 'view' ]; then
-	konsole --hold -e pass get "$ENTRY"
+	alacritty --hold --command pass get "$SELECTED_ENTRY"
 elif [ "$ACTION" == 'edit' ]; then
-	konsole -e pass edit "$ENTRY"
+	alacritty --command pass edit "$SELECTED_ENTRY"
 elif [ "$ACTION" == 'run' ]; then
-	pass run-function "$ENTRY" "$PROPERTY"
+	pass run-function "$SELECTED_ENTRY" "$PROPERTY"
 else
-	pass "$ACTION-property" "$ENTRY" "$PROPERTY"
+	pass "$ACTION-property" "$SELECTED_ENTRY" "$PROPERTY"
 fi
