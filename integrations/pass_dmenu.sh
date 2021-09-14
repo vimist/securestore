@@ -20,7 +20,7 @@ SELECTED_ENTRY="$((
 	echo 'More...'
 ) | dmenu -i -p 'Pass:')"
 
-[[ "$ENTRY" == "More..." ]] && exec "$0"
+[[ "$SELECTED_ENTRY" == "More..." ]] && exec "$0"
 
 
 PRETTY_ENTRY="$SELECTED_ENTRY"
