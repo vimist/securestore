@@ -19,7 +19,7 @@ source "$BIN_DIR/vcstore"
 
 type() {
 	ss_check_command xdotool --version
-	xdotool type --delay "$TYPE_INTERVAL" "$@"
+	echo "$1" | xdotool type --delay "$TYPE_INTERVAL" --file -
 	sleep "${TYPE_INTERVAL}e-3"
 }
 
@@ -129,7 +129,7 @@ pass_get_property() {
 #: Type the value of <property_name> stored in <entry_name> as if you had typed
 #: it on the keyboard (requires xdotool)
 pass_type_property() {
-	type "$(get_property "$@")"
+	type "$(pass_get_property "$@")"
 }
 
 #: $PROG copy-property <entry_name> <property_name>
